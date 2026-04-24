@@ -167,7 +167,10 @@ if command -v python3 >/dev/null 2>&1; then
 elif command -v jq >/dev/null 2>&1; then
   jq -cn --arg ctx "$TEXT" '{"additionalContext": $ctx}'
 else
-  # Minimal manual escape: replace backslash, double-quote, newline
-  ESCAPED=$(printf '%s' "$TEXT" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{printf "%s\\n", $0}' | head -c 65536)
+  # Minimal manual escape: replace backslash, double-quote, newline, tab
+  # Only reached when neither python3 nor jq is available.
+  ESCAPED=$(printf '%s' "$TEXT" \
+    | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g' \
+    | awk 'NR>1{printf "\\n"} {printf "%s", $0}')
   printf '{"additionalContext":"%s"}' "$ESCAPED"
 fi

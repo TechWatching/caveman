@@ -78,7 +78,7 @@ fi
 
 # /caveman slash commands
 if echo "$PROMPT" | grep -q '^/caveman'; then
-  PARTS=($PROMPT)
+  read -ra PARTS <<< "$PROMPT"
   CMD="${PARTS[0]}"
   ARG="${PARTS[1]:-}"
   MODE=""
