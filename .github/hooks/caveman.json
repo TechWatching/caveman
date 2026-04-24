@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .github/hooks/scripts/caveman-activate.sh",
+            "command": "node .github/hooks/scripts/caveman-activate.js",
             "timeout": 10,
             "statusMessage": "Loading caveman mode..."
           }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .github/hooks/scripts/caveman-mode-tracker.sh",
+            "command": "node .github/hooks/scripts/caveman-mode-tracker.js",
             "timeout": 5,
             "statusMessage": "Tracking caveman mode..."
           }
