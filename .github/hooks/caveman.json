@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "sessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .github/hooks/scripts/caveman-activate.sh",
+            "timeout": 10,
+            "statusMessage": "Loading caveman mode..."
+          }
+        ]
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .github/hooks/scripts/caveman-mode-tracker.sh",
+            "timeout": 5,
+            "statusMessage": "Tracking caveman mode..."
+          }
+        ]
+      }
+    ]
+  }
+}

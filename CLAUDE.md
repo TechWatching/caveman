@@ -46,6 +46,10 @@ Overwritten by CI on push to main when sources change. Edits here lost.
 | `plugins/caveman/skills/caveman/SKILL.md` | `skills/caveman/SKILL.md` |
 | `.cursor/skills/caveman/SKILL.md` | `skills/caveman/SKILL.md` |
 | `.windsurf/skills/caveman/SKILL.md` | `skills/caveman/SKILL.md` |
+| `.github/skills/caveman/SKILL.md` | `skills/caveman/SKILL.md` |
+| `.github/skills/caveman-commit/SKILL.md` | `skills/caveman-commit/SKILL.md` |
+| `.github/skills/caveman-review/SKILL.md` | `skills/caveman-review/SKILL.md` |
+| `.github/skills/compress/SKILL.md` | `caveman-compress/SKILL.md` (patched) |
 | `caveman.skill` | ZIP of `skills/caveman/` directory |
 | `.clinerules/caveman.md` | `rules/caveman-activate.md` |
 | `.github/copilot-instructions.md` | `rules/caveman-activate.md` |
@@ -137,6 +141,57 @@ Configured in `settings.json` under `statusLine.command`. PowerShell counterpart
 
 ---
 
+## Hook system (Copilot CLI)
+
+Requires Copilot CLI v1.0.11+. Two hook scripts in `.github/hooks/scripts/`, wired by `.github/hooks/caveman.json`. Communicate via flag file at `~/.copilot/.caveman-active`.
+
+```
+sessionStart hook ──writes mode──▶ ~/.copilot/.caveman-active ◀──writes mode── userPromptSubmitted hook
+                        │                        │
+             outputs JSON                     reads
+                        ▼                        ▼
+           {"additionalContext": "..."}   copilot-statusline.sh
+           (injected into conversation)  [CAVEMAN] / [CAVEMAN:ULTRA] / ...
+```
+
+Key difference from Claude Code: Copilot `sessionStart` outputs `{"additionalContext": "..."}` JSON (not raw stdout). Copilot `userPromptSubmitted` output is not yet injected — per-turn reinforcement is stubbed, will activate when Copilot adds support.
+
+### `.github/hooks/caveman.json`
+
+Registers two hooks:
+- `sessionStart` → `bash .github/hooks/scripts/caveman-activate.sh`
+- `userPromptSubmitted` → `bash .github/hooks/scripts/caveman-mode-tracker.sh`
+
+Windows PowerShell variants at `caveman-activate.ps1` / `caveman-mode-tracker.ps1` — wire manually in `caveman.json` on Windows.
+
+### `.github/hooks/scripts/caveman-activate.sh` — sessionStart hook
+
+Three things:
+1. Reads mode from `CAVEMAN_DEFAULT_MODE` env → `~/.config/caveman/config.json` → `full`
+2. Writes mode to `~/.copilot/.caveman-active` (symlink-safe, atomic)
+3. Reads `.github/skills/caveman/SKILL.md`, filters to active intensity level, outputs `{"additionalContext": "CAVEMAN MODE ACTIVE — level: <mode>\n\n<filtered rules>"}` JSON
+
+Also nudges Copilot to offer statusline setup if `~/.copilot/settings.json` has no `statusLine` key.
+
+Falls back to hardcoded minimal rules if Python3 not available or SKILL.md not found.
+
+### `.github/hooks/scripts/caveman-mode-tracker.sh` — userPromptSubmitted hook
+
+Reads JSON from stdin. Two responsibilities:
+1. Detects `/caveman [lite|ultra|wenyan...]`, `/caveman-commit`, natural-language activation/deactivation — writes mode to flag file or deletes it
+2. Per-turn reinforcement stub — exits cleanly for now; upgrade to emit `{"additionalContext": ...}` when Copilot adds output support for this hook event
+
+### `hooks/copilot-statusline.sh` — Copilot statusline badge
+
+Reads `~/.copilot/.caveman-active` (separate from `~/.claude/.caveman-active`). Outputs colored `[CAVEMAN]` / `[CAVEMAN:ULTRA]` badge. Same security properties as `hooks/caveman-statusline.sh`: refuses symlinks, caps read at 64 bytes, whitelist-validates mode. PowerShell counterpart at `hooks/copilot-statusline.ps1`.
+
+Configure in `~/.copilot/settings.json`:
+```json
+"statusLine": { "type": "command", "command": "bash ~/.copilot/hooks/copilot-statusline.sh" }
+```
+
+---
+
 ## Skill system
 
 Skills = Markdown files with YAML frontmatter consumed by Claude Code's skill/plugin system and by `npx skills` for other agents.
@@ -171,7 +226,7 @@ How caveman reaches each agent type:
 | Cursor | `.cursor/rules/caveman.mdc` with `alwaysApply: true` | Yes — always-on rule |
 | Windsurf | `.windsurf/rules/caveman.md` with `trigger: always_on` | Yes — always-on rule |
 | Cline | `.clinerules/caveman.md` (auto-discovered) | Yes — Cline injects all .clinerules files |
-| Copilot | `.github/copilot-instructions.md` + `AGENTS.md` | Yes — repo-wide instructions |
+| Copilot CLI | `.github/hooks/caveman.json` + `.github/skills/` (v1.0.11+) | Yes — sessionStart hook injects `additionalContext` |
 | Others | `npx skills add JuliusBrussee/caveman` | No — user must say `/caveman` each session |
 
 For agents without hook systems, minimal always-on snippet lives in README under "Want it always on?" — keep current with `rules/caveman-activate.md`.
@@ -207,9 +262,11 @@ To reproduce: `uv run python benchmarks/run.py` (needs `ANTHROPIC_API_KEY` in `.
 
 - Edit `skills/caveman/SKILL.md` for behavior changes. Never edit synced copies.
 - Edit `rules/caveman-activate.md` for auto-activation rule changes. Never edit agent-specific rule copies.
+- Never edit `.github/skills/` files directly — they are auto-synced from `skills/` by CI.
 - README most important file for user-facing impact. Optimize for non-technical readers. Preserve caveman voice.
 - Benchmark and eval numbers must be real. Never fabricate or estimate.
 - CI workflow commits back to main after merge. Account for when checking branch state.
 - Hook files must silent-fail on all filesystem errors. Never let hook crash block session start.
-- Any new flag file write must go through `safeWriteFlag()` in `caveman-config.js`. Direct `fs.writeFileSync` on predictable user-owned paths reopens the symlink-clobber attack surface.
-- Hooks must respect `CLAUDE_CONFIG_DIR` env var, not hardcode `~/.claude`. Same for `install.sh` / `install.ps1` / statusline scripts.
+- Any new flag file write must go through `safeWriteFlag()` in `caveman-config.js` (Claude Code) or the equivalent atomic-write pattern in `.sh`/`.ps1` hook scripts (Copilot). Direct writes on predictable user-owned paths reopen the symlink-clobber attack surface.
+- Hooks must respect `CLAUDE_CONFIG_DIR` env var, not hardcode `~/.claude`. Same for `install.sh` / `install.ps1` / statusline scripts. Copilot hooks use `~/.copilot/` (separate from `~/.claude/`).
+- Copilot `sessionStart` outputs `{"additionalContext": "..."}` JSON — not raw stdout like Claude Code. Copilot `userPromptSubmitted` output not yet injected; per-turn reinforcement is stubbed.
